@@ -1,5 +1,5 @@
 '''
-ExpEYES-Weather Station GUI
+GUI for measuring Relative Humidity using HS-1101 Sensor
 
 ExpEYES program developed as a part of GSoC-2015 project
 Project Tilte: Sensor Plug-ins, Add-on devices and GUI Improvements for ExpEYES
@@ -8,17 +8,48 @@ Mentor Organization:FOSSASIA
 Mentors: Hong Phuc, Mario Behling, Rebentisch
 Author: Praveen Patil
 License : GNU GPL version 3
-
-This programme is for logging weather data like temperature,barometric pressure, Relative humidity and wind speed.
 '''
 
+
+'''
+For Calculations this data sheet is used:
+https://www.parallax.com/sites/default/files/downloads/27920-Humidity-Sensor-Datasheet.pdf
+
+Slope of the curve and y-intercept is determined for 4 different linear sections of the response curve 
+given in the data sheet using
+
+y=mx+c 		Here y is capacity ( cap) in pF and x is relative humidity (RH) in % and c is y-intercept
+m = dy/dx
+c =y-mx
+and 
+x= (y-c)/m
+
+For Humidity 0% to 50%
+c= 163 in pF
+m = 0.3
+
+For Humidity 50% to 70%
+c= 160.25 in pF
+m = 0.375
+
+For Humidity 70% to 90%
+c= 156.75 in pF
+m = 0.425
+
+For Humidity 90% to 100%
+c= 136.5 in pF
+m = 0.65
+'''
+
+
+#connect HS1011 between IN1 and GND
 
 import gettext
 gettext.bindtextdomain("expeyes")
 gettext.textdomain('expeyes')
 _ = gettext.gettext
 
-
+from Tkinter import *
 import time, math, sys
 if sys.version_info.major==3:
         from tkinter import *
@@ -27,45 +58,30 @@ else:
 
 sys.path=[".."] + sys.path
 
+
 import expeyes.eyesj as eyes
 import expeyes.eyeplot as eyeplot
 import expeyes.eyemath as eyemath
 
-WIDTH  = 800   # width of drawing canvas
-HEIGHT = 600   # height    
+WIDTH  = 600   # width of drawing canvas
+HEIGHT = 400   # height    
 
-# Connections  
-# Humidity sensor HS1101 to IN1 and GND
-# Temperature sensor LM-35 to IN2, OD1 and GND
-# Barrometric Pressure Sensor  to A2
-# Anemometer to A1
-# Wind Direction Device  to SEN
-
-class WS:
-	tv = [ [], [], [], [], [], [] ]		# Six Lists for Readings time, v  , v1, v2, v3 and v4
-	TIMER = 500			# Time interval between reads
-	MINY = 0			# Voltage range
-	MAXY = 100
+class humidity:
+	tv = [ [], [], [] ]			# Lists for Readings
+	TIMER = 2000				# Time interval between reads
+	MINY = 0				# Humidity Range
+	MAXY = 250
 	running = False
-	MAXTIME = 10
-
-	
-	def v2t(self, v):			# Convert Voltage to Temperature for LM35
-		
-		t = v * 100
-		return t
-
+				
 	def start(self):
 		self.running = True
 		self.index = 0
-		p.set_state(10,1)
-		self.tv = [ [], [], [], [], [], [] ]
+		self.tv = [ [], [], [] ]
+		
 		try:
 			self.MAXTIME = int(DURATION.get())
-			self.MINY = int(TMIN.get())
-			self.MAXY = int(TMAX.get())
 			
-			g.setWorld(0, self.MINY, self.MAXTIME, self.MAXY,_('Time in second'),_('Data'))
+			g.setWorld(0, self.MINY, self.MAXTIME, self.MAXY,_('Time in second'),_('C & RH '))
 			self.TIMER = int(TGAP.get())
 			Total.config(state=DISABLED)
 			Dur.config(state=DISABLED)
@@ -73,7 +89,6 @@ class WS:
 			root.after(self.TIMER, self.update)
 		except:
 			self.msg(_('Failed to Start'))
-			pass
 
 	def stop(self):
 		self.running = False
@@ -81,22 +96,19 @@ class WS:
 		Dur.config(state=NORMAL)
 		self.msg(_('User Stopped the measurements'))
 
-
 	def update(self):
 		if self.running == False:
 			return
-		t,v = p.get_voltage_time(4) # Read IN2 for temperature sensor
+		t,v = p.get_voltage_time(3)  # Read IN1 for time
 		if len(self.tv[0]) == 0:
 			self.start_time = t
 			elapsed = 0
 		else:
-			elapsed = t - self.start_time   # To be done : make changes to have system time
+			elapsed = t - self.start_time
 		self.tv[0].append(elapsed)
 		
-		temp = self.v2t(v)
-		self.tv[1].append(temp)
-
-		cap = p.measure_cap()		
+		cap = p.measure_cap()
+		self.tv[1].append(cap)
 		
 		if cap< 180: 
          		RH= (cap -163)/0.3
@@ -107,29 +119,13 @@ class WS:
 		else:
 			RH= (cap -136.5)/0.65
 
+
 		self.tv[2].append(RH)
-
-
-		v1 = p.get_voltage(1) 				# Read A1 for wind speed  
-
-		v2 = p.get_voltage(2)				# Read A2 for Wind direction
-		v3 = p.get_voltage(5)				# Read SEN for Barrometric Pressure
-
-		# calculations of various parameters from v1 v2 and v3 to be done. 
-		
-		self.tv[3].append(v1)
-		self.tv[4].append(v2)
-		self.tv[5].append(v3)
-
 		if len(self.tv[0]) >= 2:
 			g.delete_lines()
-
-			g.line(self.tv[0], self.tv[1],1)    # red line - temperature in celsius scale
-			g.line(self.tv[0], self.tv[2],2)	# blue line - Relative Humidity in %
-			g.line(self.tv[0], self.tv[3],0)	# black line - A1
-			g.line(self.tv[0], self.tv[4],5)	# green line -A2
-			g.line(self.tv[0], self.tv[5],6)	#yellow line - SEN
 			
+			g.line(self.tv[0], self.tv[1],1)    # red line - Capacity in pF
+			g.line(self.tv[0], self.tv[2],2)	# blue line - Relative Humidity in %
 		if elapsed > self.MAXTIME:
 			self.running = False
 			Total.config(state=NORMAL)
@@ -138,18 +134,19 @@ class WS:
 			return 
 		root.after(self.TIMER, self.update)
 
+	
 	def save(self):
 		try:
 			fn = filename.get()
 		except:
-			fn = 'weather-station.dat'
+			fn = 'Humidiy.dat'
 		p.save([self.tv],fn)
 		self.msg(_('Data saved to %s')%fn)
 
 	def clear(self):
 		if self.running == True:
 			return
-		self.tv = [ [], [], [], [], [], [] ]
+		self.nt = [ [], [] ]
 		g.delete_lines()
 		self.msg(_('Cleared Data and Trace'))
 
@@ -167,7 +164,7 @@ root = Tk()
 Canvas(root, width = WIDTH, height = 5).pack(side=TOP)  
 
 g = eyeplot.graph(root, width=WIDTH, height=HEIGHT, bip=False)
-pt = WS()
+pt = humidity()
 
 cf = Frame(root, width = WIDTH, height = 10)
 cf.pack(side=TOP,  fill = BOTH, expand = 1)
@@ -176,7 +173,7 @@ b3 = Label(cf, text = _('Read Every'))
 b3.pack(side = LEFT, anchor = SW)
 TGAP = StringVar()
 Dur =Entry(cf, width=5, bg = 'white', textvariable = TGAP)
-TGAP.set('1000')
+TGAP.set('2000')
 Dur.pack(side = LEFT, anchor = SW)
 b3 = Label(cf, text = _('mS,'))
 b3.pack(side = LEFT, anchor = SW)
@@ -189,38 +186,27 @@ Total.pack(side = LEFT, anchor = SW)
 b3 = Label(cf, text = _('Seconds.'))
 b3.pack(side = LEFT, anchor = SW)
 
-b3 = Label(cf, text = _('Range'))
-b3.pack(side = LEFT, anchor = SW)
-TMIN = StringVar()
-TMIN.set('0')
-Tmin =Entry(cf, width=5, bg = 'white', textvariable = TMIN)
-Tmin.pack(side = LEFT, anchor = SW)
-b3 = Label(cf, text = _('to,'))
-b3.pack(side = LEFT, anchor = SW)
-TMAX = StringVar()
-TMAX.set('100')
-Tmax =Entry(cf, width=5, bg = 'white', textvariable = TMAX)
-Tmax.pack(side = LEFT, anchor = SW)
-b3 = Label(cf, text = _('C. '))
 
 b3 = Button(cf, text = _('SAVE to'), command = pt.save)
-b3.pack(side = LEFT, anchor = SW)
-b3.pack(side = LEFT, anchor = SW)
+b3.pack(side = LEFT, anchor = N)
+#b3.pack(side = LEFT, anchor = SW)
 filename = StringVar()
 e1 =Entry(cf, width=15, bg = 'white', textvariable = filename)
-filename.set('temperature.dat')
-e1.pack(side = LEFT, anchor = SW)
+filename.set('Humidity.dat')
+e1.pack(side = RIGHT, anchor = SW)
 
 cf = Frame(root, width = WIDTH, height = 10)
 cf.pack(side=TOP,  fill = BOTH, expand = 1)
+
 
 cf = Frame(root, width = WIDTH, height = 10)
 cf.pack(side=TOP,  fill = BOTH, expand = 1)
 e1.pack(side = LEFT)
 
-b3 = Label(cf, text = _(' RED Line - Temperature in Celsius'), fg = 'red')
+
+b3 = Label(cf, text = _('   RED Line - Capacity in pF'), fg = 'red')
 b3.pack(side = LEFT, anchor = SW)
-b3 = Label(cf, text = _('    BLUE Line - Relative Humidity in %'), fg = 'blue') # Add info for other data lines
+b3 = Label(cf, text = _('    BLUE Line - Relative Humidity in %.'), fg = 'blue')
 b3.pack(side = LEFT, anchor = SW)
 
 b5 = Button(cf, text = _('QUIT'), command = pt.quit)
@@ -237,7 +223,5 @@ mf.pack(side=TOP)
 msgwin = Label(mf,text=_('Message'), fg = 'blue')
 msgwin.pack(side=LEFT, anchor = S, fill=BOTH, expand=1)
 
-
-eyeplot.pop_image('pics/image-name.png', _('---'))  # save the image in the same directory as of the program
-root.title(_('ExpEYES- Weather Station Data Logger'))
+root.title(_('Relative Humidity using HS-1101 sensor'))
 root.mainloop()
